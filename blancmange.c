@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <assert.h>
 #include <gmp.h>
 #include <limits.h>
@@ -104,26 +105,40 @@ void get_coef_test() {
 	mpz_clear(val);
 }
 
-#define MAX_PERIOD_LEN 1048576ul
+static mpz_t cached_n;
+static unsigned long int cached_period_len;
 
-//static unsigned long int dbg_period_len;
-
-// 0 < m < n, n - odd, gcd(m, n) == 1
-void blanc_period(mpq_t res, const mpz_t m, const mpz_t n) {
-	unsigned long int period_len;
-	{
+unsigned long int get_period_len(const mpz_t n) {
+	if (mpz_cmp(n, cached_n) != 0) {
 		mpz_t period_len_z; mpz_init(period_len_z);
 		mpz_t base; mpz_init(base); mpz_set_ui(base, 2);
 		mul_group_mod_element_order(period_len_z, n, base);
 		assert(mpz_fits_ulong_p(period_len_z));
-		period_len = mpz_get_ui(period_len_z);
+		cached_period_len = mpz_get_ui(period_len_z);
 		mpz_clear(period_len_z);
 		mpz_clear(base);
+		mpz_set(cached_n, n);
 	}
-	//dbg_period_len = period_len;
+	return cached_period_len;
+}
+
+#define MAX_PERIOD_LEN 1048576ul
+
+static unsigned long int dbg_period_len;
+static long int dbg_bits;
+static mpz_t dbg_coef;
+
+// 0 < m < n, n - odd, gcd(m, n) == 1
+void blanc_period(mpq_t res, const mpz_t m, const mpz_t n) {
+	unsigned long int period_len = get_period_len(n);
+dbg_period_len = period_len;
+/*if ((period_len & 1) == 1) {
+	mpq_set_ui(res, 0, 1);
+	return;
+}*/
 	
 	if (period_len > MAX_PERIOD_LEN) {fprintf(stderr, "period_len = %lu (too big)\n", period_len); mpq_set_ui(res, 0, 1); return;}
-	
+
 	mpz_t period_pow; mpz_init(period_pow);
 	{
 		mpz_t const1; mpz_init(const1); mpz_set_ui(const1, 1);
@@ -158,6 +173,19 @@ void blanc_period(mpq_t res, const mpz_t m, const mpz_t n) {
 						mpz_t mul1_z; mpz_init(mul1_z);
 						{
 							long int bits = get_bits(period_val, period_len);
+dbg_bits = bits;
+/*if (bits != 0) {
+	mpz_clear(mul1_z);
+	mpz_clear(dv1_z);
+	mpq_clear(dv1_q);
+	mpq_clear(add1_q);
+	mpq_clear(div1_q);
+	mpz_clear(period_pow);
+	mpz_clear(period_pow_1);
+	mpz_clear(period_val);
+	mpq_set_ui(res, 0, 1);
+	return;
+}*/
 							mpz_mul_si(mul1_z, period_pow, bits);
 						}
 						mpz_mul(dv1_z, mul1_z, m);
@@ -178,6 +206,7 @@ void blanc_period(mpq_t res, const mpz_t m, const mpz_t n) {
 				{
 					mpz_t coef; mpz_init(coef);
 					get_coef(coef, period_val, period_len);
+mpz_set(dbg_coef, coef);
 					mpz_mul_2exp(add2_z, coef, 1);
 					mpz_clear(coef);
 				}
@@ -363,13 +392,39 @@ if (n_probab_prime == 2) {printf("n is prime\n"); return;}*/
 	mpz_clear(n);
 }
 
+void blanc_prop_irred_dbg_test() {
+	mpz_t m; mpz_init(m);
+	mpz_t n; mpz_init(n);
+	for (mpz_set_ui(n, 45); mpz_cmp_ui(n, 45) <= 0; mpz_add_set_ui(n, 2)) {
+		for (mpz_set_ui(m, 1); mpz_cmp(m, n) < 0; mpz_inc(m)) {
+			mpz_t gcd; mpz_init(gcd);
+			mpz_gcd(gcd, m, n);
+			unsigned int flag_gcd = (mpz_cmp_ui(gcd, 1) > 0);
+			mpz_clear(gcd);
+			if (flag_gcd) continue;
+			
+			mpq_t blanc; mpq_init(blanc);
+			blanc_prop_irred(blanc, m, n);
+			printf("%lu", dbg_period_len); printf("\t");
+			printf("%li", dbg_bits); printf("\t");
+			mpz_out_str(stdout, 10, m); printf(" / ");
+			mpz_out_str(stdout, 10, n); printf("\t");
+			mpz_out_str(stdout, 10, dbg_coef); printf("\t");
+			mpq_out_str(stdout, 10, blanc); printf("\n");
+			mpq_clear(blanc);
+		}
+	}
+	mpz_clear(m);
+	mpz_clear(n);
+}
+
 void blanc_23() {
 	mpq_t const23; mpq_init(const23);
 	mpq_set_ui(const23, 2, 3);
 
 	mpz_t m; mpz_init(m);
 	mpz_t n; mpz_init(n);
-	for (mpz_set_ui(n, 2); mpz_cmp_ui(n, 2048+2) < 0; mpz_inc(n)) {
+	for (mpz_set_ui(n, 3); mpz_cmp_ui(n, 4096+1) <= 0; mpz_add_set_ui(n, 2)) {
 		for (mpz_set_ui(m, 1); mpz_cmp(m, n) < 0; mpz_inc(m)) {
 			mpz_t gcd; mpz_init(gcd);
 			mpz_gcd(gcd, m, n);
@@ -382,11 +437,15 @@ void blanc_23() {
 			unsigned int flag_23 = mpq_equal(blanc, const23);
 			mpq_clear(blanc);
 			if (flag_23) {
+				printf("%lu", dbg_period_len); printf("\t");
+				printf("%li", dbg_bits); printf("\t");
+				mpz_out_str(stdout, 10, dbg_coef); printf("\t");
 				mpz_out_str(stdout, 10, m); printf(" / ");
 				mpz_out_str(stdout, 10, n); printf("\n");
 				break;
 			}
 		}
+		//fprintf(stderr, "\t\t\t"); mpz_out_str(stderr, 10, n); fprintf(stderr, "\n");
 	}
 	mpz_clear(m);
 	mpz_clear(n);
@@ -394,8 +453,420 @@ void blanc_23() {
 	mpq_clear(const23);
 }
 
+bool blanc_23_check(mpz_t m, const mpz_t n) {
+	mpq_t const23; mpq_init(const23); mpq_set_ui(const23, 2, 3);
+	mpz_t gcd; mpz_init(gcd);
+	mpq_t blanc; mpq_init(blanc);
+	bool m_found = false;
+	mpz_t max; mpz_init(max); mpz_mul_ui(m, n, 2); mpz_cdiv_q_ui(max, m, 5);
+	for (mpz_fdiv_q_ui(m, n, 3); mpz_cmp(m, max) <= 0; mpz_inc(m)) {
+		mpz_gcd(gcd, m, n);
+		if (mpz_cmp_ui(gcd, 1) > 0) continue;
+		blanc_prop_irred(blanc, m, n);
+		if (mpq_equal(blanc, const23)) {
+			m_found = true;
+			break;
+		}
+	}
+	/*{
+		mpz_t n3; mpz_init(n3);
+		mpz_fdiv_q_ui(n3, n, 3);
+		if (mpz_cmp(m, n3) <= 0) {
+			printf("\n!!! m <= n/3\n");
+		}
+		mpz_clear(n3);
+	}*/
+	mpq_clear(const23);
+	mpz_clear(gcd);
+	mpq_clear(blanc);
+	mpz_clear(max);
+	return m_found;
+}
+
+void blanc_23_check_test() {
+	mpz_t m; mpz_init(m);
+	mpz_t n; mpz_init(n); mpz_set_ui(n, 1025);
+	if (blanc_23_check(m, n)) {
+		mpz_out_str(stdout, 10, m); printf(" / ");
+		mpz_out_str(stdout, 10, n); printf("\n");
+	}
+	mpz_clear(m);
+	mpz_clear(n);
+}
+
+static unsigned long int opt_p_l;
+
+bool blanc_23_divisors_cb(const mpz_t n, void *data) {
+	(void)data;
+	if (mpz_cmp_ui(n, 1) == 0) return true;
+	unsigned long int period_len = get_period_len(n);
+	if (period_len != opt_p_l) return true;
+	
+	mpz_t m; mpz_init(m);
+	if (blanc_23_check(m, n)) {
+		printf("%lu", dbg_period_len); printf("\t");
+		printf("%li", dbg_bits); printf("\t");
+		mpz_out_str(stdout, 10, dbg_coef); printf("\t");
+		mpz_out_str(stdout, 10, m); printf(" / ");
+		mpz_out_str(stdout, 10, n); printf("\n");
+	}
+	mpz_clear(m);
+	return true;
+}
+
+void blanc_23_divisors() {
+	mpz_t const1; mpz_init(const1); mpz_set_ui(const1, 1);
+	mpz_t n; mpz_init(n);
+	unsigned int i;
+	for (i=1; i<=17; ++i) {
+		printf("4^%u\n", i);
+		opt_p_l = i*2;		// [+1] opt_p_l = i*4;
+		mpz_mul_2exp(n, const1, i*2);
+		mpz_dec(n);			// [+1] mpz_inc(n);
+		iterate_divisors(n, blanc_23_divisors_cb, NULL);
+		printf("\n");
+		fflush(stdout);
+	}
+	mpz_clear(const1);
+	mpz_clear(n);
+}
+
+static mpz_t opt_period_pow_1;
+static mpz_t opt_period_pow_1_3;
+
+bool blanc_23_divs_coef_cb(const mpz_t n, void *data) {
+	(void)data;
+	if (mpz_cmp_ui(n, 1) == 0) return true;
+	unsigned long int period_len = get_period_len(n);
+	if (period_len != opt_p_l) return true;
+	
+	mpz_t con; mpz_init(con);
+	mpz_divexact(con, opt_period_pow_1, n);
+	
+	mpz_t gcd; mpz_init(gcd);
+	mpz_t val; mpz_init(val);
+	mpz_t coef; mpz_init(coef);
+	mpz_t m; mpz_init(m);
+	mpz_t max; mpz_init(max);
+	//if (mpz_cmp_ui(n, 17) < 0) {
+		mpz_mul_ui(m, n, 2); mpz_cdiv_q_ui(max, m, 5);
+	//} else {
+	//	mpz_mul_ui(m, n, 6); mpz_cdiv_q_ui(max, m, 17);
+	//}
+	for (mpz_fdiv_q_ui(m, n, 3); mpz_cmp(m, max) <= 0; mpz_inc(m)) {
+	//for (mpz_set_ui(m, 1); mpz_cmp(m, opt_period_pow_1) < 0; mpz_inc(m)) {
+		mpz_gcd(gcd, m, n);
+		if (mpz_cmp_ui(gcd, 1) > 0) continue;
+		mpz_mul(val, con, m);
+		if (get_bits(val, period_len) != 0) continue;
+		get_coef(coef, val, period_len);
+		if (mpz_cmp(coef, opt_period_pow_1_3) == 0) {
+			long double d = (long double)mpz_get_ui(m)/(long double)mpz_get_ui(n) - 1.0L/3.0L;
+			printf("%.40Lf", -log2l(d)); printf("\t");
+			printf("%lu", period_len); printf("\t");
+			mpz_out_str(stdout, 10, n); printf("\t");
+			mpz_out_str(stdout, 10, con); printf("\t");
+			mpz_out_str(stdout, 10, m); printf("\t");
+			mpz_out_str(stdout, 10, val); printf("\n");
+			break;
+		}
+	}
+	
+	mpz_clear(con);
+	mpz_clear(gcd);
+	mpz_clear(val);
+	mpz_clear(coef);
+	mpz_clear(m);
+	mpz_clear(max);
+
+	return true;
+}
+
+bool blanc_23_divs_coef_desc_cb(const mpz_t n, void *data) {
+	(void)data;
+	if (mpz_cmp_ui(n, 1) == 0) return true;
+	unsigned long int period_len = get_period_len(n);
+	if (period_len != opt_p_l) return true;
+	
+	mpz_t con; mpz_init(con);
+	mpz_divexact(con, opt_period_pow_1, n);
+	
+	mpz_t gcd; mpz_init(gcd);
+	mpz_t val; mpz_init(val);
+	mpz_t coef; mpz_init(coef);
+	mpz_t m; mpz_init(m);
+	mpz_t min; mpz_init(min);
+	mpz_fdiv_q_ui(min, n, 3);
+	for (mpz_fdiv_q_ui(m, n, 2); mpz_cmp(m, min) >= 0; mpz_dec(m)) {
+		mpz_gcd(gcd, m, n);
+		if (mpz_cmp_ui(gcd, 1) > 0) continue;
+		mpz_mul(val, con, m);
+		if (get_bits(val, period_len) != 0) continue;
+		get_coef(coef, val, period_len);
+		if (mpz_cmp(coef, opt_period_pow_1_3) == 0) {
+			long double d = 5.0L/12.0L - (long double)mpz_get_ui(m)/(long double)mpz_get_ui(n);
+			printf("%.40Lf", -log2l(d)); printf("\t");
+			printf("%lu", period_len); printf("\t");
+			mpz_out_str(stdout, 10, n); printf("\t");
+			mpz_out_str(stdout, 10, con); printf("\t");
+			mpz_out_str(stdout, 10, m); printf("\t");
+			mpz_out_str(stdout, 10, val); printf("\n");
+			break;
+		}
+	}
+	
+	mpz_clear(con);
+	mpz_clear(gcd);
+	mpz_clear(val);
+	mpz_clear(coef);
+	mpz_clear(m);
+	mpz_clear(min);
+
+	return true;
+}
+
+//define POW4INC
+void blanc_23_divs_coef() {
+	mpz_t const1; mpz_init(const1); mpz_set_ui(const1, 1);
+	mpz_init(opt_period_pow_1);
+	mpz_init(opt_period_pow_1_3);
+	mpz_t base; mpz_init(base);
+	
+	unsigned int i;
+	for (i=1; i<=13/*17*/; ++i) {
+#ifndef POW4INC
+		opt_p_l = i*2;
+#else
+		opt_p_l = i*4;
+#endif
+		mpz_mul_2exp(opt_period_pow_1, const1, opt_p_l);
+		mpz_dec(opt_period_pow_1);
+		mpz_divexact_ui(opt_period_pow_1_3, opt_period_pow_1, 3);
+#ifndef POW4INC
+		mpz_set(base, opt_period_pow_1);
+#else
+		mpz_mul_2exp(base, const1, i*2);
+		mpz_inc(base);
+#endif
+		iterate_divisors(base, blanc_23_divs_coef_cb, NULL);
+		fflush(stdout);
+	}
+	
+	mpz_clear(const1);
+	mpz_clear(opt_period_pow_1);
+	mpz_clear(opt_period_pow_1_3);
+	mpz_clear(base);
+}
+
+void period_value_mix() {
+	mpz_t const1; mpz_init(const1); mpz_set_ui(const1, 1);
+	mpz_t pow_1; mpz_init(pow_1);
+	mpz_t pow_1_3; mpz_init(pow_1_3);
+	mpz_t coef; mpz_init(coef);
+	mpz_t val; mpz_init(val);
+	mpz_t coef_max; mpz_init(coef_max);
+	
+	unsigned long int len;
+	for (len=2; len<=24; len+=2) {
+		mpz_mul_2exp(pow_1, const1, len);
+		mpz_dec(pow_1);
+		// [max] mpz_set_ui(coef_max, 0);
+		mpz_divexact_ui(pow_1_3, pow_1, 3);
+		
+		for (mpz_set_ui(val, 1); mpz_cmp(val, pow_1) < 0; mpz_inc(val)) {
+			if (get_bits(val, len) != 0) continue;
+			get_coef(coef, val, len);
+			// [max] if (mpz_cmp(coef_max, coef) < 0) mpz_set(coef_max, coef);
+			if (mpz_cmp(coef, pow_1_3) >= 0) {
+				printf("%lu", len); printf("\t");
+				mpz_out_str(stdout, 10, val); printf("\t");
+				long double part = (long double)mpz_get_ui(pow_1)/(long double)mpz_get_ui(val);
+				printf("%.40Lf", part); printf("\n");
+				break;
+			}
+		}
+		/* [max]
+		printf("%lu", len); printf("\t");
+		mpz_out_str(stdout, 10, coef_max); printf("\t");
+		long double part = (long double)mpz_get_ui(pow_1)/(long double)mpz_get_ui(coef_max);
+		printf("%.40Lf", part); printf("\n");
+		*/
+	}
+	
+	mpz_clear(val);
+	mpz_clear(coef);
+	mpz_clear(pow_1_3);
+	mpz_clear(pow_1);
+	mpz_clear(const1);
+}
+
+void period_value_max() {
+	mpz_t const1; mpz_init(const1); mpz_set_ui(const1, 1);
+	mpz_t pow_1; mpz_init(pow_1);
+	mpz_t pow_1_3; mpz_init(pow_1_3);
+	mpz_t coef; mpz_init(coef);
+	mpz_t val; mpz_init(val);
+	mpz_t coef_max; mpz_init(coef_max);
+	
+	unsigned long int len;
+	for (len=2; len<=30; len+=2) {
+		mpz_mul_2exp(pow_1, const1, len);
+		mpz_dec(pow_1);
+		// [max] mpz_set_ui(coef_max, 0);
+		mpz_divexact_ui(pow_1_3, pow_1, 3);
+		
+		for (mpz_fdiv_q_ui(val, pow_1, 2); mpz_cmp_ui(val, 1) >= 0; mpz_dec(val)) {
+			if (get_bits(val, len) != 0) continue;
+			get_coef(coef, val, len);
+			// [max] if (mpz_cmp(coef_max, coef) < 0) mpz_set(coef_max, coef);
+			if (mpz_cmp(coef, pow_1_3) >= 0) {
+				printf("%lu", len); printf("\t");
+				mpz_out_str(stdout, 10, val); printf("\t");
+				long double part = (long double)mpz_get_ui(val)/(long double)mpz_get_ui(pow_1);
+				printf("%.40Lf", 5.0L/12.0L - part); printf("\n");
+				break;
+			}
+		}
+		/* [max]
+		printf("%lu", len); printf("\t");
+		mpz_out_str(stdout, 10, coef_max); printf("\t");
+		long double part = (long double)mpz_get_ui(pow_1)/(long double)mpz_get_ui(coef_max);
+		printf("%.40Lf", part); printf("\n");
+		*/
+	}
+	
+	mpz_clear(val);
+	mpz_clear(coef);
+	mpz_clear(pow_1_3);
+	mpz_clear(pow_1);
+	mpz_clear(const1);
+}
+
+bool blanc_23_coef_cb(const mpz_t n, void *data) {
+	(void)data;
+	
+	if (mpz_cmp_ui(n, 1) == 0) return true;
+	unsigned long int len = get_period_len(n);
+	if (len != opt_p_l) return true;
+	printf("# "); mpz_out_str(stdout, 10, n); printf("\n");
+	
+	mpz_t const1; mpz_init(const1); mpz_set_ui(const1, 1);
+	mpz_t pow_1; mpz_init(pow_1);
+	mpz_mul_2exp(pow_1, const1, len);
+	mpz_dec(pow_1);
+	mpz_t pow_1_3; mpz_init(pow_1_3);
+	mpz_divexact_ui(pow_1_3, pow_1, 3);
+	
+	mpz_t con; mpz_init(con);
+	mpz_divexact(con, pow_1, n);
+	
+	mpz_t gcd; mpz_init(gcd);
+	mpz_t val; mpz_init(val);
+	mpz_t coef; mpz_init(coef);
+	mpz_t d; mpz_init(d);
+	mpz_t m; mpz_init(m);
+	mpz_t max; mpz_init(max);
+	mpz_cdiv_q_ui(max, n, 2);
+	
+	for (mpz_fdiv_q_ui(m, n, 3); mpz_cmp(m, max) <= 0; mpz_inc(m)) {
+	//for (mpz_set_ui(m, 1); mpz_cmp(m, opt_period_pow_1) < 0; mpz_inc(m)) {
+		mpz_gcd(gcd, m, n);
+		if (mpz_cmp_ui(gcd, 1) > 0) continue;
+		mpz_mul(val, con, m);
+		if (get_bits(val, len) != 0) continue;
+		get_coef(coef, val, len);
+		
+		mpz_sub(d, pow_1_3, coef);
+		mpz_out_str(stdout, 10, d); printf("\t");
+		
+		long double part = (long double)mpz_get_ui(m)/(long double)mpz_get_ui(n);
+		printf("%.40Lf", part); printf("\n");
+	}
+	
+	mpz_clear(con);
+	mpz_clear(gcd);
+	mpz_clear(val);
+	mpz_clear(coef);
+	mpz_clear(d);
+	mpz_clear(m);
+	mpz_clear(max);
+	mpz_clear(pow_1);
+	mpz_clear(pow_1_3);
+	mpz_clear(const1);
+	
+	printf("\n");
+	return true;
+}
+
+void blanc_23_coef(unsigned long int len) {
+	mpz_t const1; mpz_init(const1); mpz_set_ui(const1, 1);
+	
+	opt_p_l = len;
+	mpz_t pow_1; mpz_init(pow_1);
+	mpz_mul_2exp(pow_1, const1, len);
+	mpz_dec(pow_1);
+	iterate_divisors(pow_1, blanc_23_coef_cb, NULL);
+	
+	mpz_clear(pow_1);
+	mpz_clear(const1);
+}
+
+void blanc_23_all_coefs(unsigned long int len) {
+	mpz_t const1; mpz_init(const1); mpz_set_ui(const1, 1);
+	mpz_t pow_1; mpz_init(pow_1);
+	mpz_mul_2exp(pow_1, const1, len);
+	mpz_dec(pow_1);
+	mpz_t pow_1_3; mpz_init(pow_1_3);
+	mpz_divexact_ui(pow_1_3, pow_1, 3);
+	
+	mpz_t coef; mpz_init(coef);
+	mpz_t d; mpz_init(d);
+	mpz_t gcd; mpz_init(gcd);
+	mpz_t n; mpz_init(n);
+	mpz_t max; mpz_init(max); mpz_set(max, pow_1); //mpz_fdiv_q_ui(max, pow_1, 2);
+	mpz_t val; mpz_init(val);
+	for (mpz_set_ui(val, 1); mpz_cmp(val, max) < 0; mpz_inc(val)) {
+		long int bits = get_bits(val, len);
+		if (bits != 0) continue;
+		get_coef(coef, val, len);
+		//if (mpz_cmp(coef, pow_1_3) != 0) continue;
+		/*mpz_sub(d, pow_1_3, coef);
+		mpz_gcd(gcd, pow_1, val);
+		mpz_divexact(n, pow_1, gcd);*/
+		long double part = (long double)mpz_get_ui(val)/(long double)mpz_get_ui(pow_1);
+		long double c_pt = (long double)mpz_get_ui(coef)/(long double)mpz_get_ui(pow_1);
+		
+		//printf("%li", bits); printf("\t");
+		/*mpz_out_str(stdout, 10, val); printf("\t");
+		mpz_out_str(stdout, 10, coef); printf("\t");
+		mpz_out_str(stdout, 10, d); printf("\t");
+		mpz_out_str(stdout, 10, n); printf("\t");
+		printf("%.40Lf", part); printf("\n");*/
+		
+		printf("%.40Lf", part); printf("\t");
+		printf("%.40Lf", c_pt); printf("\n");
+	}
+	
+	mpz_clear(val);
+	mpz_clear(max);
+	mpz_clear(n);
+	mpz_clear(gcd);
+	mpz_clear(d);
+	mpz_clear(coef);
+	
+	mpz_clear(pow_1_3);
+	mpz_clear(pow_1);
+	mpz_clear(const1);
+}
+
 int main() {
-	blanc_prop_irred_test();
+	//mpz_init(dbg_coef);
+	mpz_init(cached_n); mpz_set_ui(cached_n, 0);
+	
+	blanc_23_all_coefs(16);
+	
+	//mpz_clear(dbg_coef);
+	mpz_clear(cached_n);
 	return 0;
 }
 

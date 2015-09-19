@@ -353,3 +353,65 @@ void mul_group_mod_element_order_test2() {
 	mpz_clear(mod);
 	mpz_clear(elem);
 }
+
+// -------------------
+
+typedef bool (*iterate_divisors_cb)(const mpz_t divisor, void *data);
+
+// ~descending
+void iterate_divisors(const mpz_t n, iterate_divisors_cb cb, void *data) {
+	factors_list_struct factors = factorise(n);
+	unsigned long int pows[factors.size];
+	factors_list_size_type i;
+	for (i=0; i<factors.size; ++i) pows[i] = factors.list[i].pow;
+	mpz_t divisor; mpz_init(divisor);
+	
+	while (true) {
+		convolute_factors_list(divisor, factors);
+		if (!cb(divisor, data)) break;
+		
+		for (i=0; i<factors.size && factors.list[i].pow == 0; ++i) factors.list[i].pow = pows[i];
+		if (i == factors.size) break;
+		--factors.list[i].pow;
+	}
+	
+	mpz_clear(divisor);
+	factors_list_clear(factors);
+}
+
+// ~ascending
+void iterate_divisors_asc(const mpz_t n, iterate_divisors_cb cb, void *data) {
+	factors_list_struct factors = factorise(n);
+	unsigned long int pows[factors.size];
+	factors_list_size_type i;
+	for (i=0; i<factors.size; ++i) {
+		pows[i] = factors.list[i].pow;
+		factors.list[i].pow = 0;
+	}
+	mpz_t divisor; mpz_init(divisor);
+	
+	while (true) {
+		convolute_factors_list(divisor, factors);
+		if (!cb(divisor, data)) break;
+		
+		for (i=0; i<factors.size && factors.list[i].pow == pows[i]; ++i) factors.list[i].pow = 0;
+		if (i == factors.size) break;
+		++factors.list[i].pow;
+	}
+	
+	mpz_clear(divisor);
+	factors_list_clear(factors);
+}
+
+bool iterate_divisors_test_cb(const mpz_t divisor, void *data) {
+	(void)data;
+	mpz_out_str(stdout, 10, divisor); printf("\n");
+	return true;
+}
+
+void iterate_divisors_test() {
+	mpz_t n; mpz_init(n); mpz_set_ui(n, 4095);
+	iterate_divisors(n, iterate_divisors_test_cb, NULL);
+	mpz_clear(n);
+}
+
