@@ -859,7 +859,7 @@ void blanc_23_all_coefs(unsigned long int len) {
 	mpz_clear(const1);
 }
 
-int main() {
+void run_blanc_23_all_coefs() {
 	//mpz_init(dbg_coef);
 	mpz_init(cached_n); mpz_set_ui(cached_n, 0);
 	
@@ -867,6 +867,27 @@ int main() {
 	
 	//mpz_clear(dbg_coef);
 	mpz_clear(cached_n);
-	return 0;
 }
 
+void print_err_msg_and_exit(const char *msg) {
+	fprintf(stderr, "%s\n", msg);
+	exit(EXIT_FAILURE);
+}
+
+int main() {
+	mpq_t input; mpq_init(input);
+	size_t read_bytes = mpq_inp_str(input, stdin, 10);
+	if (read_bytes == 0) print_err_msg_and_exit("input error");
+	if (!(mpq_cmp_si(input, 0, 1) > 0 && mpq_cmp_si(input, 1, 1) < 0)) print_err_msg_and_exit("incorrect input");
+	mpz_t numerator;   mpz_init(numerator);
+	mpz_t denominator; mpz_init(denominator);
+	mpq_get_num(numerator, input);
+	mpq_get_den(denominator, input);
+	assert(mpz_cmp_ui(numerator, 0) > 0 && mpz_cmp(numerator, denominator) < 0);
+	mpq_t result; mpq_init(result);
+	blanc_prop_irred(result, numerator, denominator);
+	size_t write_bytes = mpq_out_str(stdout, 10, result);
+	if (write_bytes == 0) print_err_msg_and_exit("output error");
+	printf("\n");
+	return 0;
+}
